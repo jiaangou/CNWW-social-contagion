@@ -1,11 +1,8 @@
-#Generate NxN grid
-#using LightGraphs
 using SparseArrays
 using StatsBase
 using Graphs
 using IterTools
 using GraphPlot, Compose
-#using Plots
 
 
 #Functions --------------------------------
