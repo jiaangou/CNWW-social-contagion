@@ -3,7 +3,7 @@ using StatsBase
 using Graphs
 using IterTools
 using GraphPlot, Compose
-
+using Plots
 
 #Functions --------------------------------
 
@@ -134,150 +134,97 @@ end
 
 # Experimental treatments ------
 # 1. Removing social ties
-function remove_social_ties(graph, vertex)
-    g = copy(graph)
+function remove_all_edges_of_vertices(graph, vertices)
+    # Create a copy of the graph
+    graph_copy = copy(graph)
 
-    #Remove neighbors of each vertex
-    for v in vertex
-        neighbors_to_clear = neighbors(g, v)
-        
-        for neighbor in neighbors_to_clear
-            rem_edge!(g, v, neighbor)
+    # Remove edges connected to the specified vertices
+    for vertex in vertices
+        for edge in collect(edges(graph_copy))
+            if src(edge) == vertex || dst(edge) == vertex
+                rem_edge!(graph_copy, edge)
+            end
         end
-        
     end
-    
-    return g
+
+    return graph_copy
 end
+
 
 ########################################################################
 #Set up 
-
 #Graphs
-N = 100
-G_g = grid([N, N]) 
-G_s = social_graph(N^2, 0.1)
+N = 50
+social_edge_p = 0.1
+G_g = Graphs.grid([N, N])
+G_s = social_graph(N^2, social_edge_p)
+#[neighbors(G_s, n)|>length for n in 1:nv(G_s)] |> mean #average number of neighbors
 
 #Initial infections
-N_initial = 100 #number of initial exposed
+N_initial =  100 #number of initial exposed
 initial_nodes = sample(1:nv(G_g), N_initial, replace = false) #sample nodes to expose 
-
 #Percolation parameters
 p = 0.6 #percolation probability 
-θ = 2 #activation threshold
+θ = 10 #activation threshold
 
-#Test
+#Test 
 spatial_social_contagion(G_g, G_s, initial_nodes, p, θ)
-
-#Logic -------
-#Select random node
-rand_node = sample(initial_nodes)
-source_removed = initial_nodes[initial_nodes .!= rand_node]
-G_s_removed = remove_social_ties(G_s, rand_node)
-
-spatial_social_contagion(G_g, G_s, initial_nodes, p, θ) #control
-spatial_social_contagion(G_g, G_s, source_removed, p, θ) #source removed
-spatial_social_contagion(G_g, G_s_removed, initial_nodes, p, θ) #social ties removed
-
-#Simulate parameters -----------
-#Number of nodes
-source_n = 100
-result = zeros(source_n)
-reps = 10
-
-#Setup response variables
-control = zeros(source_n)
-source_removal = zeros(source_n)
-social_removal = zeros(source_n)
-
-for n in collect(1:source_n)
-    #draw random nodes
-    initial_nodes = sample(1:nv(G_g), n, replace = false) #sample nodes to expose 
-
-    #treatments
-    rand_node = sample(initial_nodes) #randomly select a node to be manipulated
-    source_removed = initial_nodes[initial_nodes .!= rand_node] #remove the random node as a source
-    G_s_removed = remove_social_ties(G_s, rand_node) #remove the social ties of that random node
-
-    #run multiple replicates and average
-    control[n] = [spatial_social_contagion(G_g, G_s, initial_nodes, p, θ) for r in 1:reps] |> mean
-    source_removal[n] = [spatial_social_contagion(G_g, G_s, source_removed, p, θ) for r in 1:reps] |> mean
-    social_removal[n] = [spatial_social_contagion(G_g, G_s_removed, initial_nodes, p, θ) for r in 1:reps] |> mean
-
-end
-
-#-----------------------------------------------------
-N = 100
-G_g = grid([N, N]) 
-G_s = social_graph(N^2, 0.1)
-
-#Initial infections
-N_initial = 500 #number of initial exposed
-initial_nodes = sample(1:nv(G_g), N_initial, replace = false) #sample nodes to expose 
+#out = zeros(1000)
+#[out[i] = spatial_social_contagion(G_g, G_s, sample(1:nv(G_g), N_initial, replace = false), p, θ) for i in 1:1000]
+#histogram(out, label = false)
+#annotate!(0.2, 150, Plots.text("Distribution of infection rates over random initial conditions", :black, :left, 8))
+#png("infection-distribution.png")
 
 
+#Simulate parameters ----------------
 #Removing an increasing number of source nodes OR social ties
-n_removed = 200
-control_state = zeros(n_removed)
-source_removal_state = zeros(n_removed)
-social_removal_state = zeros(n_removed)
+n_removed = 90
+control_state = zeros(n_removed + 1)
+source_removal_state = zeros(n_removed + 1)
+social_removal_state = zeros(n_removed +1)
 
-reps = 10
+#Replicates
+reps = 50
+control = zeros(reps)
+source = zeros(reps)
+social = zeros(reps)
 
 #parameters: adjust percolation probability, edge density (to account for the size of network)
-for n in 1:n_removed
+for n in 0:n_removed
 
-    removed_nodes = sample(initial_nodes, n, replace = false) #random select nodes to remove
-    remaining_nodes = filter(x -> !(x in removed_nodes), initial_nodes)
-    social_g = remove_social_ties(G_s, removed_nodes) #remove social ties of the nodes
-    
-    #compute
-    control_state[n] = [spatial_social_contagion(G_g, G_s, initial_nodes, p, θ) for r in 1:reps] |> mean
-    source_removal_state[n] = [spatial_social_contagion(G_g, G_s, remaining_nodes, p, θ) for r in 1:reps] |> mean
-    social_removal_state[n] = [spatial_social_contagion(G_g, social_g, initial_nodes, p, θ) for r in 1:reps] |> mean
+    #replicates
+    for r in 1:reps
 
-end
+        #Draw random nodes to infect (and receive treatment)
+        initial_nodes = sample(1:nv(G_g), N_initial, replace = false) #sample nodes to expose 
+        removed_nodes = sample(initial_nodes, n, replace = false) #random select nodes to remove
+        remaining_nodes = filter(x -> !(x in removed_nodes), initial_nodes)
+        social_g = remove_all_edges_of_vertices(G_s, removed_nodes) #remove social ties of the nodes
 
+        #Compute infection rates
+        control[r] = spatial_social_contagion(G_g, G_s, initial_nodes, p, θ)
+        source[r] = spatial_social_contagion(G_g, G_s, remaining_nodes, p, θ)
+        social[r] =  spatial_social_contagion(G_g, social_g, initial_nodes, p, θ)
 
-#--------------------------
-#Social ties debugging
-edge_p = collect(0.0001:0.0005:0.1)
-threshold = collect(2:5)
-#results = zeros(llength(edge_p) * length(threshold))
-results = []
-
-for i in 1:length(edge_p)
-    
-    social_g  = social_graph(N^2, edge_p[i])
-
-    for t in threshold
-        θ = t
-        results = append!(results, [spatial_social_contagion(G_g, social_g, initial_nodes, p, θ) for r in 1:reps] |> mean)
     end
 
+    #Summarise replicates    
+    control_state[n+1] = control |> mean
+    source_removal_state[n+1] = source |> mean
+    social_removal_state[n+1] = social |> mean
+
 end
 
-#plot(edge_p, results, xlabel = "Edge probability", ylabel = "Proportion of infected", label = "")
-
-
-# Prepare a plot
-#plot(xlabel="Edge probability", ylabel="Infection %")
-#findall(x -> x == 2, threshold)
-plot(edge_p, results[1:200], label = "Threshold: 2")
-plot!(edge_p, results[201:400], label = "Threshold: 3")
-plot!(edge_p, results[401:600], label = "Threshold: 4")
-plot!(edge_p, results[601:800], label = "Threshold: 5")
-
-
-#Note: higher threshold is leading to more infections (i.e. IT SHOULD DECREASE. BUG!!!)
-
-#Visualize graph
-using Plots
-plot(control_state, label = "Control")
+#Plot results ----
+xs = collect(0:1:n_removed)
+total_nodes = N^2
+plot(xs, control_state, label = "Control", xlabel = "Number of nodes removed", ylabel = "Proportion of infected")
 plot!(source_removal_state, label = "Source removed")
 plot!(social_removal_state, label = "Social ties removed")
-
-#Increase number of initial infected should shift where the transintion point is 
-
-
+annotate!(1, 0.30, Plots.text("Initial infection: $N_initial", :black, :left, 8))
+annotate!(1, 0.27, Plots.text("Number of nodes: $total_nodes", :black, :left, 8))
+annotate!(1, 0.24, Plots.text("θ: $θ", :black, :left, 8))
+annotate!(1, 0.21, Plots.text("Percolation p: $p", :black, :left, 8))
+annotate!(1, 0.18, Plots.text("Social edge p: $social_edge_p", :black, :left, 8))
+#png("social-contagion.png")
 
